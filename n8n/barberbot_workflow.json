@@ -1,0 +1,208 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "72ff1bca-6338-435e-9fd4-fb4c0bf3880e",
+      "name": "Telegram Trigger",
+      "webhookId": "2ac9d1fa-f269-4f22-91b1-c82edcd27ef8",
+      "credentials": {
+        "telegramApi": {
+          "id": "UA5khcEb8CWwFZbN",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4c232aa6-4b56-43f1-bcab-1784755eab17",
+              "name": "chat_id",
+              "value": "={{ $json.message.chat.id }}",
+              "type": "number"
+            },
+            {
+              "id": "ffe24f2d-72fc-4372-9bd0-1d8ee763448a",
+              "name": "mensaje_cliente",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "88cdfbb9-7839-4e2a-94fe-a0dd33775541",
+              "name": "nombre_cliente",
+              "value": "={{ $json.message.from.first_name || $json.message.chat.first_name || \"Cliente\" }}",
+              "type": "string"
+            },
+            {
+              "id": "64511ba4-658f-4fb7-9689-67fd9511c85c",
+              "name": "fecha_recepcion",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "e13e4ef0-65ff-48c6-b326-59050d91f9a9",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "=Hola {{ $json.nombre_cliente }} 👋 Soy BarberBot. Recibí tu mensaje: \"{{ $json.mensaje_cliente }}\"",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "f7e7484c-f6b9-48b9-aac9-78fdbbc33143",
+      "name": "Send a text message",
+      "webhookId": "7de1d498-e7bc-4408-a35d-0d2489872438",
+      "credentials": {
+        "telegramApi": {
+          "id": "UA5khcEb8CWwFZbN",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres BarberBot, un asistente para una barbería.\n\nAnaliza el siguiente mensaje de un cliente:\n\n\"{{ $json.mensaje_cliente }}\"\n\nFecha y hora actual en Colombia:\n{{ $now.setZone(\"America/Bogota\").toISO() }}\n\nDevuelve SOLO un JSON válido con esta estructura:\n\n{\n  \"intencion\": \"reservar | precios | horarios | cancelar | cambiar_hora | desconocido\",\n  \"servicio\": \"corte | barba | corte_barba | otro | null\",\n  \"fecha\": \"YYYY-MM-DD | null\",\n  \"hora\": \"HH:mm | null\",\n  \"duracion\": 30,\n  \"respuesta_sugerida\": \"mensaje corto para responder al cliente\"\n}\n\nReglas:\n- Si el cliente quiere una cita, usa intencion = \"reservar\".\n- Si falta fecha u hora, conserva intencion = \"reservar\", pero coloca null en el dato faltante.\n- Si pregunta precios, usa intencion = \"precios\".\n- Si pregunta horarios de atención, usa intencion = \"horarios\".\n- Si no entiendes el mensaje, usa intencion = \"desconocido\".\n- No inventes datos.\n- La duración por defecto para corte es 30 minutos.\n- La duración para corte_barba es 60 minutos.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        416,
+        0
+      ],
+      "id": "3b69307f-c2f1-4d1b-af8f-e7782ac19032",
+      "name": "Basic LLM Chain1"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        352,
+        208
+      ],
+      "id": "197bf692-1915-4fd4-b2a6-d82faae59b3b",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "6VKDgU7tWtswO9H4",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const llm = $input.first().json;\n\nlet data = llm.output ?? llm.text ?? llm.response ?? llm;\n\nif (typeof data === 'string') {\n  data = data.replace(/```json/g, '').replace(/```/g, '').trim();\n  data = JSON.parse(data);\n}\n\n// Como tu nodo todavía se llama \"Edit Fields\", usamos ese nombre\nconst entrada = $('Edit Fields').first().json;\n\nconst duracion = data.duracion || 30;\n\nlet start_datetime = null;\nlet end_datetime = null;\n\nif (data.fecha && data.hora) {\n  start_datetime = `${data.fecha}T${data.hora}:00-05:00`;\n\n  end_datetime = new Date(\n    new Date(start_datetime).getTime() + duracion * 60000\n  ).toISOString();\n}\n\nreturn [\n  {\n    json: {\n      ...entrada,\n      intencion: data.intencion,\n      servicio: data.servicio,\n      fecha: data.fecha,\n      hora: data.hora,\n      duracion,\n      respuesta_sugerida: data.respuesta_sugerida,\n      start_datetime,\n      end_datetime\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        0
+      ],
+      "id": "096da8fc-b479-467a-8ecd-b3d3cf1a6f41",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        []
+      ]
+    },
+    "Basic LLM Chain1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1e010568-1119-4f6d-913f-d57f33d4d4db",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7b9233082eec9947dbcc708b14681f596f4800311c8b597b3e1e5760fd12bd31"
+  },
+  "id": "YhRyPoK1P4cs91U4",
+  "tags": []
+}
