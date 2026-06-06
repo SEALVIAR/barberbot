@@ -1,0 +1,1505 @@
+﻿{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const llm = $input.first().json;\n\nlet data = llm.output ?? llm.text ?? llm.response ?? llm;\n\nif (typeof data === 'string') {\n  data = data.replace(/```json/g, '').replace(/```/g, '').trim();\n  data = JSON.parse(data);\n}\n\nconst entrada = $('Renombrar Campos').first().json;\n\nconst intencion = data.intencion || 'desconocido';\nconst duracion = Number(data.duracion) || 30;\n\nfunction crearIntervalo(fecha, hora, duracionMinutos) {\n  if (!fecha || !hora) {\n    return {\n      start_datetime: null,\n      end_datetime: null\n    };\n  }\n\n  const start_datetime = `${fecha}T${hora}:00-05:00`;\n\n  const end_datetime = new Date(\n    new Date(start_datetime).getTime() + duracionMinutos * 60000\n  ).toISOString();\n\n  return {\n    start_datetime,\n    end_datetime\n  };\n}\n\n// Para reservar normalmente\nconst reserva = crearIntervalo(data.fecha, data.hora, duracion);\n\n// Para cambiar hora\nconst nueva_fecha =\n  data.nueva_fecha || (intencion === 'cambiar_hora' ? data.fecha : null);\n\nconst nueva_hora =\n  data.nueva_hora || (intencion === 'cambiar_hora' ? data.hora : null);\n\nconst cambio = crearIntervalo(nueva_fecha, nueva_hora, duracion);\n\nconst chat_id = entrada.chat_id;\n\nreturn [\n  {\n    json: {\n      ...entrada,\n\n      intencion,\n      servicio: data.servicio || null,\n\n      fecha: data.fecha || null,\n      hora: data.hora || null,\n      duracion,\n      respuesta_sugerida: data.respuesta_sugerida || null,\n\n      start_datetime: reserva.start_datetime,\n      end_datetime: reserva.end_datetime,\n\n      nueva_fecha,\n      nueva_hora,\n      nueva_start_datetime: cambio.start_datetime,\n      nueva_end_datetime: cambio.end_datetime,\n\n      buscar_evento_por_chat: `Chat ID: ${chat_id}`,\n\n      tiene_fecha_y_hora: reserva.start_datetime !== null,\n      tiene_nuevo_horario: cambio.start_datetime !== null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        496
+      ],
+      "id": "9ca54551-6976-46cd-a726-ae4572a1c6d2",
+      "name": "Normalizar IA"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1568,
+        496
+      ],
+      "id": "7e33e562-ffbf-4968-bb65-07bdcc417b42",
+      "name": "Recibir Mensajes",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4c232aa6-4b56-43f1-bcab-1784755eab17",
+              "name": "chat_id",
+              "value": "={{ $json.message.chat.id }}",
+              "type": "number"
+            },
+            {
+              "id": "ffe24f2d-72fc-4372-9bd0-1d8ee763448a",
+              "name": "mensaje_cliente",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "88cdfbb9-7839-4e2a-94fe-a0dd33775541",
+              "name": "nombre_cliente",
+              "value": "={{ $json.message.from.first_name || $json.message.chat.first_name || \"Cliente\" }}",
+              "type": "string"
+            },
+            {
+              "id": "64511ba4-658f-4fb7-9689-67fd9511c85c",
+              "name": "fecha_recepcion",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1360,
+        496
+      ],
+      "id": "d73efb10-8bd9-4ac7-a4ad-53ccbba6529c",
+      "name": "Renombrar Campos"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres BarberBot, un asistente para una barberÃ­a.\n\nAnaliza el siguiente mensaje de un cliente:\n\n\"{{ $json.mensaje_cliente }}\"\n\nFecha y hora actual en Colombia:\n{{ $now.setZone(\"America/Bogota\").toISO() }}\n\nDevuelve SOLO un JSON vÃ¡lido con esta estructura:\n\n{\n  \"intencion\": \"reservar | precios | horarios | cancelar | cambiar_hora | desconocido\",\n  \"servicio\": \"corte | corte_barba | corte_barba_cejas | cejas | barba | corte_cejas | mechas | color_cabello | null\",\n  \"fecha\": \"YYYY-MM-DD | null\",\n  \"hora\": \"HH:mm | null\",\n  \"nueva_fecha\": \"YYYY-MM-DD | null\",\n  \"nueva_hora\": \"HH:mm | null\",\n  \"duracion\": 30,\n  \"respuesta_sugerida\": \"mensaje corto para responder al cliente\"\n}\nDuraciones por servicio:\n- corte: 30 minutos\n- corte_barba: 45 minutos\n- corte_barba_cejas: 50 minutos\n- cejas: 5 minutos\n- barba: 15 minutos\n- corte_cejas: 35 minutos\n- mechas: 60 minutos\n- color_cabello: 90 minutos\nReglas:\n- Si el cliente quiere una cita, usa intencion = \"reservar\".\n- Si falta fecha u hora, conserva intencion = \"reservar\", pero coloca null en el dato faltante.\n- Si pregunta precios, usa intencion = \"precios\".\n- Si pregunta horarios de atenciÃ³n, usa intencion = \"horarios\".\n- Si no entiendes el mensaje, usa intencion = \"desconocido\".\n- Si el cliente quiere cambiar una cita, usa intencion = \"cambiar_hora\".\n- Si el cliente dice \"quiero cambiar mi cita para maÃ±ana a las 4\", entonces:\n  nueva_fecha = fecha nueva\n  nueva_hora = hora nueva\n- Si no dice nueva fecha u hora, deja nueva_fecha y nueva_hora en null.\n- No inventes datos.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        -1152,
+        496
+      ],
+      "id": "bb2bb130-fbc2-4286-b8c6-4484e1ff4501",
+      "name": "Usar un LLM"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -1152,
+        688
+      ],
+      "id": "a79de243-69f0-4139-be46-bfa43b8efa38",
+      "name": "OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID_AQUI",
+          "name": "OpenAI credential example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_AQUI",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_AQUI"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Hoja 1",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_AQUI"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -576,
+        496
+      ],
+      "id": "f5623830-8b70-4bae-95c3-8c78f330bf42",
+      "name": "Agregar una fila en el excel",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID_AQUI",
+          "name": "Google Sheets OAuth2 credential example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "reservar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ba45ee71-7228-4c58-86d5-676c028c7f98"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e41fe9a9-3b4c-4fe3-b7bc-3de972ce6394",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "precios",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "093ecf95-1ef6-4808-8611-bdd0f411820b",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "horarios",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "8889e02f-7583-40b8-a5d0-bf2f60ff13ea",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "cancelar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ff5b4b03-5455-46f6-956e-24be53fbd685",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "cambiar_hora",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7a18fa82-a72e-4be9-a6ae-edcfa4a292d3",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "desconocido",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -368,
+        496
+      ],
+      "id": "54b6a1e7-785e-4ee8-a917-9ac3f0568a5f",
+      "name": "Categorizar"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "=No entendÃ­ muy bien tu solicitud ðŸ˜…  \nPuedes escribirme algo como: \"Quiero reservar un corte maÃ±ana a las 3 pm\"",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        1088
+      ],
+      "id": "ee7c5008-0539-4a9c-9a49-5811f4adfcaa",
+      "name": "No entender la solicitud",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "=Atendemos de lunes a sÃ¡bado de 9:00 a.m. a 7:00 p.m. \n\nPara reservar, dime el servicio, la fecha y la hora que prefieres.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        480
+      ],
+      "id": "e810ddbf-c7a5-4c7f-8dd4-03b81dde3efa",
+      "name": "Horarios Barberia",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "=Nuestros precios son:  \n\nCorte: $19.000 aprox 30 min\nCorte con barba: $22.000 aprox 45 min\nCorte con barba y cejas: $23.000 aprox 50 min\nCejas: $5.000 aprox 5 min\nBarba: $8.000 aprox 15 min\nCorte con cejas: $20.000 aprox 35 min\nMechas: $80.000 aprox 1 hora\nColor cabello: $100.000 aprox 1 h y 30 min\n\nÂ¿Quieres que te ayude a reservar una cita?",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        288
+      ],
+      "id": "7adb1e02-fe4e-4a2c-9a51-d15bbbecc11a",
+      "name": "Precios, servicios y tiempo aprox",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "No encontrÃ© una cita activa asociada a tu chat ðŸ˜•. \n\nPrimero debes tener una cita reservada para poder cambiarla.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        928,
+        1024
+      ],
+      "id": "fe36fe0a-a168-4744-918e-5137880400cf",
+      "name": "Send a text message1",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "35f8b23f-a3f6-43b7-8d1e-3692f5dbe4cc",
+              "leftValue": "={{ $('Normalizar IA').first().json.tiene_nuevo_horario === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        896
+      ],
+      "id": "7c1c5a8c-c4f7-4896-97da-7f41760cc5a2",
+      "name": "Â¿Tiene nuevo horario?"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "CALENDAR_ID_AQUI",
+          "mode": "list",
+          "cachedResultName": "CALENDAR_ID_AQUI"
+        },
+        "limit": "=50",
+        "options": {
+          "query": "={{ $('Normalizar IA').item.json.chat_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        288,
+        832
+      ],
+      "id": "f3f09836-f9a2-4d10-ac37-eb061caed61c",
+      "name": "Buscar cita por Chat ID",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_ID_AQUI",
+          "name": "Google Calendar OAuth2 credential example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const normalizado = $('Normalizar IA').first().json;\n\nconst eventos = $input.all()\n  .map(item => item.json)\n  .filter(evento => evento && evento.id);\n\nfunction obtenerInicio(evento) {\n  return (\n    evento.start?.dateTime ||\n    evento.start?.date ||\n    evento.startTime ||\n    evento.start ||\n    null\n  );\n}\n\nfunction obtenerFin(evento) {\n  return (\n    evento.end?.dateTime ||\n    evento.end?.date ||\n    evento.endTime ||\n    evento.end ||\n    null\n  );\n}\n\nfunction obtenerDuracionDesdeDescripcion(descripcion) {\n  if (!descripcion) return null;\n\n  const match = descripcion.match(/Duraci[oÃ³]n:\\s*(\\d+)\\s*minutos?/i);\n\n  if (!match) return null;\n\n  return Number(match[1]);\n}\n\nconst ahora = new Date();\n\nconst eventosValidos = eventos\n  .filter(evento => {\n    const descripcion = evento.description || '';\n    const inicio = obtenerInicio(evento);\n\n    const tieneChat = descripcion.includes(`Chat ID: ${normalizado.chat_id}`);\n    const estaCancelada = descripcion.toLowerCase().includes('estado: cancelada');\n    const esFutura = inicio ? new Date(inicio) >= ahora : true;\n\n    return tieneChat && !estaCancelada && esFutura;\n  })\n  .sort((a, b) => {\n    const inicioA = new Date(obtenerInicio(a) || 0);\n    const inicioB = new Date(obtenerInicio(b) || 0);\n    return inicioA - inicioB;\n  });\n\nif (eventosValidos.length === 0) {\n  return [\n    {\n      json: {\n        ...normalizado,\n        evento_encontrado: false,\n        event_id: null,\n        evento_actual_summary: null,\n        evento_actual_description: null,\n        evento_actual_inicio: null,\n        evento_actual_fin: null,\n        duracion_original_minutos: null,\n        debug_eventos_recibidos: eventos.length\n      }\n    }\n  ];\n}\n\nconst evento = eventosValidos[0];\n\nconst inicioOriginal = obtenerInicio(evento);\nconst finOriginal = obtenerFin(evento);\nconst descripcionOriginal = evento.description || '';\n\nlet duracionOriginalMinutos = obtenerDuracionDesdeDescripcion(descripcionOriginal);\n\nif (!duracionOriginalMinutos && inicioOriginal && finOriginal) {\n  duracionOriginalMinutos = Math.round(\n    (new Date(finOriginal).getTime() - new Date(inicioOriginal).getTime()) / 60000\n  );\n}\n\nif (!duracionOriginalMinutos) {\n  duracionOriginalMinutos = 30;\n}\n\nreturn [\n  {\n    json: {\n      ...normalizado,\n      evento_encontrado: true,\n      event_id: evento.id,\n      evento_actual_summary: evento.summary || 'Cita BarberBot',\n      evento_actual_description: descripcionOriginal,\n      evento_actual_inicio: inicioOriginal,\n      evento_actual_fin: finOriginal,\n      duracion_original_minutos: duracionOriginalMinutos,\n      debug_eventos_recibidos: eventos.length\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        832
+      ],
+      "id": "851eba75-995a-4d9e-b5d0-a0ee089b420a",
+      "name": "Elegir la cita encontrada"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "49094ac0-a3b2-439d-8c4b-eb757fd9a5a0",
+              "leftValue": "={{ $json.evento_encontrado === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        704,
+        832
+      ],
+      "id": "8eaa64dc-381a-4d65-a114-34fcfa3e07ab",
+      "name": "Â¿EncontrÃ³ cita?"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "calendar": {
+          "__rl": true,
+          "value": "CALENDAR_ID_AQUI",
+          "mode": "list",
+          "cachedResultName": "CALENDAR_ID_AQUI"
+        },
+        "eventId": "={{ $('Elegir la cita encontrada').first().json.event_id }}",
+        "updateFields": {
+          "description": "=Cliente: {{ $('Calcular nuevo horario').first().json.nombre_cliente }}\nChat ID: {{ $('Calcular nuevo horario').first().json.chat_id }}\nServicio: {{ $('Calcular nuevo horario').first().json.servicio || \"No especificado\" }}\nDuraciÃ³n: {{ $('Calcular nuevo horario').first().json.duracion_usada_para_cambio }} minutos\nMensaje original: {{ $('Calcular nuevo horario').first().json.mensaje_cliente }}\nEstado: activa\nÃšltima acciÃ³n: cambio de hora\nNueva fecha: {{ $('Calcular nuevo horario').first().json.nueva_fecha }}\nNueva hora: {{ $('Calcular nuevo horario').first().json.nueva_hora }}",
+          "end": "={{ $('Calcular nuevo horario').first().json.nueva_end_datetime_final }}",
+          "start": "={{ $('Calcular nuevo horario').first().json.nueva_start_datetime }}",
+          "summary": "={{ $('Calcular nuevo horario').first().json.evento_actual_summary }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1632,
+        640
+      ],
+      "id": "684fd8d9-23e2-4266-9a28-4d55e5bc5c88",
+      "name": "Actualizar evento",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_ID_AQUI",
+          "name": "Google Calendar OAuth2 credential example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Normalizar IA').first().json.chat_id }}",
+        "text": "=Listo âœ… CambiÃ© tu cita.\n\nNueva fecha: {{ $('Normalizar IA').first().json.nueva_fecha }}\nNueva hora: {{ $('Normalizar IA').first().json.nueva_hora }}\n\nÂ¡Te esperamos en la barberÃ­a!",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1904,
+        640
+      ],
+      "id": "c11275ac-1926-403c-bff0-692b82323c3c",
+      "name": "Confirmar cambio",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Normalizar IA').item.json.chat_id }}",
+        "text": "Lo siento, ese nuevo horario ya estÃ¡ ocupado ðŸ˜•.  \n\nPor favor dime otra fecha u otra hora para revisar disponibilidad.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1632,
+        832
+      ],
+      "id": "4bfb6a30-a58a-46e0-b230-8fcc2055f950",
+      "name": "Responder no disponibilidad",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst nuevaStart = item.nueva_start_datetime;\nconst duracionOriginal = Number(item.duracion_original_minutos) || 30;\n\nif (!nuevaStart) {\n  return [\n    {\n      json: {\n        ...item,\n        error_cambio_hora: true,\n        mensaje_error: 'No se encontrÃ³ nueva fecha y hora para reprogramar.'\n      }\n    }\n  ];\n}\n\nconst nuevaEnd = new Date(\n  new Date(nuevaStart).getTime() + duracionOriginal * 60000\n).toISOString();\n\nreturn [\n  {\n    json: {\n      ...item,\n      nueva_end_datetime_final: nuevaEnd,\n      duracion_usada_para_cambio: duracionOriginal\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        736
+      ],
+      "id": "1d5896b0-1bcd-4b17-824d-53abd99eaed0",
+      "name": "Calcular nuevo horario"
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "value": "CALENDAR_ID_AQUI",
+          "mode": "list",
+          "cachedResultName": "CALENDAR_ID_AQUI"
+        },
+        "timeMin": "={{ $('Calcular nuevo horario').first().json.nueva_start_datetime }}",
+        "timeMax": "={{ $('Calcular nuevo horario').first().json.nueva_end_datetime_final }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1168,
+        736
+      ],
+      "id": "583a7156-f38d-49f2-85bd-4d8d1bc3c7a6",
+      "name": "Consultar disponibilidad nueva hora",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_ID_AQUI",
+          "name": "Google Calendar OAuth2 credential example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f022fa27-de90-4a47-8dc2-51781c9719cd",
+              "leftValue": "={{ $json.available === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1392,
+        736
+      ],
+      "id": "e7faa21d-f74e-4e79-8e84-305463cdc7a0",
+      "name": "Si existe disponibildad"
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "value": "CALENDAR_ID_AQUI",
+          "mode": "list",
+          "cachedResultName": "CALENDAR_ID_AQUI"
+        },
+        "timeMin": "={{ $('Normalizar IA').first().json.start_datetime }}",
+        "timeMax": "={{ $('Normalizar IA').first().json.end_datetime }}",
+        "options": {
+          "outputFormat": "availability",
+          "timezone": {
+            "__rl": true,
+            "value": "America/Bogota",
+            "mode": "list",
+            "cachedResultName": "America/Bogota"
+          }
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        272,
+        -144
+      ],
+      "id": "9558be57-143e-434c-b5cc-d906ef4054d1",
+      "name": "Verificar disponibilidad",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_ID_AQUI",
+          "name": "Google Calendar OAuth2 credential example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f17c5e4e-6253-442f-a5bb-d001edf657d0",
+              "leftValue": "={{ $json.available === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        -144
+      ],
+      "id": "d1b84306-9261-4fe3-a3d8-5f48d1c23306",
+      "name": "Si existe disponibilidad"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "CALENDAR_ID_AQUI",
+          "mode": "list",
+          "cachedResultName": "CALENDAR_ID_AQUI"
+        },
+        "start": "={{ $('Normalizar IA').item.json.start_datetime }}",
+        "end": "={{ $('Normalizar IA').item.json.end_datetime }}",
+        "additionalFields": {
+          "description": "=Cliente: {{ $('Normalizar IA').first().json.nombre_cliente }}\nChat ID: {{ $('Normalizar IA').first().json.chat_id }}\nServicio: {{ $('Normalizar IA').first().json.servicio }}\nDuraciÃ³n: {{ $('Normalizar IA').first().json.duracion }} minutos\nMensaje original: {{ $('Normalizar IA').first().json.mensaje_cliente }}\nEstado: activa",
+          "summary": "=BarberBot - {{ $('Normalizar IA').item.json.servicio }} - {{ $('Normalizar IA').item.json.nombre_cliente }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        720,
+        -160
+      ],
+      "id": "58ad2994-bc27-4210-bbfa-515923278f18",
+      "name": "Crear la cita",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_ID_AQUI",
+          "name": "Google Calendar OAuth2 credential example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_sugerida || \"Claro, puedo ayudarte a reservar. Â¿QuÃ© fecha y hora prefieres?\" }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        272,
+        80
+      ],
+      "id": "d971e969-4231-40bd-85be-81a5cc5e0d7e",
+      "name": "Solicitar fecha y hora",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Normalizar IA').item.json.chat_id }}",
+        "text": "=Listo âœ… Tu cita quedÃ³ agendada.  \nServicio: {{ $('Normalizar IA').item.json.servicio }} \nFecha: {{ $('Normalizar IA').item.json.fecha }} Hora: {{ $('Normalizar IA').item.json.hora }}  \n\nÂ¡Te esperamos en la barberÃ­a!",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        -160
+      ],
+      "id": "b2313b35-c0a2-443f-843e-4dca26518ba2",
+      "name": "Mensaje confirmar creaciÃ³n de la cita",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Categorizar').item.json.chat_id }}",
+        "text": "Claro, puedo ayudarte a cambiar tu cita.  Por favor dime la nueva fecha y hora.  \nEjemplo: \"Quiero cambiar mi cita para maÃ±ana a las 4 pm\"",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        288,
+        1024
+      ],
+      "id": "36469b72-3b8a-4882-9f40-ee026e283184",
+      "name": "Responder para obtener detalles",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Normalizar IA').item.json.chat_id }}",
+        "text": "Lo siento, ese horario ya estÃ¡ ocupado ðŸ˜•.  \n\nPor favor dime otra fecha u otra hora para revisar disponibilidad.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        48
+      ],
+      "id": "eb58b018-7239-44c2-a08f-0bf4a809e315",
+      "name": "Mensaje de no disponibilidad",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "CALENDAR_ID_AQUI",
+          "mode": "list",
+          "cachedResultName": "CALENDAR_ID_AQUI"
+        },
+        "limit": "=50",
+        "options": {
+          "query": "={{ $('Normalizar IA').item.json.chat_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        672
+      ],
+      "id": "15f004e7-9653-4be1-8008-2425c9fd3096",
+      "name": "Buscar cita por Chat ID2",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_ID_AQUI",
+          "name": "Google Calendar OAuth2 credential example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const normalizado = $('Normalizar IA').first().json;\n\nconst eventos = $input.all()\n  .map(item => item.json)\n  .filter(evento => evento && evento.id);\n\nfunction obtenerInicio(evento) {\n  return (\n    evento.start?.dateTime ||\n    evento.start?.date ||\n    evento.startTime ||\n    evento.start ||\n    null\n  );\n}\n\nfunction obtenerFin(evento) {\n  return (\n    evento.end?.dateTime ||\n    evento.end?.date ||\n    evento.endTime ||\n    evento.end ||\n    null\n  );\n}\n\nfunction obtenerDuracionDesdeDescripcion(descripcion) {\n  if (!descripcion) return null;\n\n  const match = descripcion.match(/Duraci[oÃ³]n:\\s*(\\d+)\\s*minutos?/i);\n\n  if (!match) return null;\n\n  return Number(match[1]);\n}\n\nconst ahora = new Date();\n\nconst eventosValidos = eventos\n  .filter(evento => {\n    const descripcion = evento.description || '';\n    const inicio = obtenerInicio(evento);\n\n    const tieneChat = descripcion.includes(`Chat ID: ${normalizado.chat_id}`);\n    const estaCancelada = descripcion.toLowerCase().includes('estado: cancelada');\n    const esFutura = inicio ? new Date(inicio) >= ahora : true;\n\n    return tieneChat && !estaCancelada && esFutura;\n  })\n  .sort((a, b) => {\n    const inicioA = new Date(obtenerInicio(a) || 0);\n    const inicioB = new Date(obtenerInicio(b) || 0);\n    return inicioA - inicioB;\n  });\n\nif (eventosValidos.length === 0) {\n  return [\n    {\n      json: {\n        ...normalizado,\n        evento_encontrado: false,\n        event_id: null,\n        evento_actual_summary: null,\n        evento_actual_description: null,\n        evento_actual_inicio: null,\n        evento_actual_fin: null,\n        duracion_original_minutos: null,\n        debug_eventos_recibidos: eventos.length\n      }\n    }\n  ];\n}\n\nconst evento = eventosValidos[0];\n\nconst inicioOriginal = obtenerInicio(evento);\nconst finOriginal = obtenerFin(evento);\nconst descripcionOriginal = evento.description || '';\n\nlet duracionOriginalMinutos = obtenerDuracionDesdeDescripcion(descripcionOriginal);\n\nif (!duracionOriginalMinutos && inicioOriginal && finOriginal) {\n  duracionOriginalMinutos = Math.round(\n    (new Date(finOriginal).getTime() - new Date(inicioOriginal).getTime()) / 60000\n  );\n}\n\nif (!duracionOriginalMinutos) {\n  duracionOriginalMinutos = 30;\n}\n\nreturn [\n  {\n    json: {\n      ...normalizado,\n      evento_encontrado: true,\n      event_id: evento.id,\n      evento_actual_summary: evento.summary || 'Cita BarberBot',\n      evento_actual_description: descripcionOriginal,\n      evento_actual_inicio: inicioOriginal,\n      evento_actual_fin: finOriginal,\n      duracion_original_minutos: duracionOriginalMinutos,\n      debug_eventos_recibidos: eventos.length\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        672
+      ],
+      "id": "6d0439c9-b5ab-4aee-9877-8cc4a6ebd70d",
+      "name": "Elegir cita para cancelar"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "49094ac0-a3b2-439d-8c4b-eb757fd9a5a0",
+              "leftValue": "={{ $json.evento_encontrado === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        464,
+        560
+      ],
+      "id": "80071911-7b5b-4fec-b3f6-65badcc37b49",
+      "name": "Â¿EncontrÃ³ cita?1"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "CALENDAR_ID_AQUI",
+          "mode": "list",
+          "cachedResultName": "CALENDAR_ID_AQUI"
+        },
+        "eventId": "={{ $('Elegir cita para cancelar').first().json.event_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        688,
+        464
+      ],
+      "id": "322c4eff-2433-4153-b8a7-04e8abb92ea0",
+      "name": "Cancelar evento",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_ID_AQUI",
+          "name": "Google Calendar OAuth2 credential example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Elegir cita para cancelar').first().json.chat_id }}",
+        "text": "=Listo âœ… Tu cita fue cancelada.\n\nCita cancelada:\n{{ $('Elegir cita para cancelar').first().json.evento_actual_summary }}\n\nYa puedes solicitar una nueva cita cuando quieras.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        464
+      ],
+      "id": "183c7d12-9992-49ea-8182-0f5d916794d9",
+      "name": "Mensaje cancelar evento",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Normalizar IA').first().json.chat_id }}",
+        "text": "No encontrÃ© una cita activa asociada a tu chat ðŸ˜•.\n\nSi tienes una cita, revisa que la hayas reservado desde este mismo chat de Telegram.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        688,
+        656
+      ],
+      "id": "979789ab-ccff-4d66-9d29-a3c8fa8ba64d",
+      "name": "Mensaje no contrar cita",
+      "webhookId": "WEBHOOK_ID_AQUI",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID_AQUI",
+          "name": "Telegram account example"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6adbd2be-03fa-4799-8225-0e442ee05491",
+              "leftValue": "={{ $('Normalizar IA').first().json.tiene_fecha_y_hora === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        64
+      ],
+      "id": "48a05dd9-ccaa-40cb-9c83-0c51554949ba",
+      "name": "Â¿Tiene fecha y hora?"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Normalizar IA": {
+      "main": [
+        [
+          {
+            "node": "Agregar una fila en el excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recibir Mensajes": {
+      "main": [
+        [
+          {
+            "node": "Renombrar Campos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Renombrar Campos": {
+      "main": [
+        [
+          {
+            "node": "Usar un LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usar un LLM": {
+      "main": [
+        [
+          {
+            "node": "Normalizar IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Usar un LLM",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agregar una fila en el excel": {
+      "main": [
+        [
+          {
+            "node": "Categorizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Categorizar": {
+      "main": [
+        [
+          {
+            "node": "Â¿Tiene fecha y hora?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Precios, servicios y tiempo aprox",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Horarios Barberia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar cita por Chat ID2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Â¿Tiene nuevo horario?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No entender la solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No entender la solicitud": {
+      "main": [
+        []
+      ]
+    },
+    "Horarios Barberia": {
+      "main": [
+        []
+      ]
+    },
+    "Precios, servicios y tiempo aprox": {
+      "main": [
+        []
+      ]
+    },
+    "Â¿Tiene nuevo horario?": {
+      "main": [
+        [
+          {
+            "node": "Buscar cita por Chat ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder para obtener detalles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar cita por Chat ID": {
+      "main": [
+        [
+          {
+            "node": "Elegir la cita encontrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Elegir la cita encontrada": {
+      "main": [
+        [
+          {
+            "node": "Â¿EncontrÃ³ cita?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Â¿EncontrÃ³ cita?": {
+      "main": [
+        [
+          {
+            "node": "Calcular nuevo horario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar evento": {
+      "main": [
+        [
+          {
+            "node": "Confirmar cambio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular nuevo horario": {
+      "main": [
+        [
+          {
+            "node": "Consultar disponibilidad nueva hora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar disponibilidad nueva hora": {
+      "main": [
+        [
+          {
+            "node": "Si existe disponibildad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Si existe disponibildad": {
+      "main": [
+        [
+          {
+            "node": "Actualizar evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder no disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar disponibilidad": {
+      "main": [
+        [
+          {
+            "node": "Si existe disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Si existe disponibilidad": {
+      "main": [
+        [
+          {
+            "node": "Crear la cita",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mensaje de no disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear la cita": {
+      "main": [
+        [
+          {
+            "node": "Mensaje confirmar creaciÃ³n de la cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solicitar fecha y hora": {
+      "main": [
+        []
+      ]
+    },
+    "Mensaje de no disponibilidad": {
+      "main": [
+        []
+      ]
+    },
+    "Buscar cita por Chat ID2": {
+      "main": [
+        [
+          {
+            "node": "Elegir cita para cancelar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Elegir cita para cancelar": {
+      "main": [
+        [
+          {
+            "node": "Â¿EncontrÃ³ cita?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Â¿EncontrÃ³ cita?1": {
+      "main": [
+        [
+          {
+            "node": "Cancelar evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mensaje no contrar cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancelar evento": {
+      "main": [
+        [
+          {
+            "node": "Mensaje cancelar evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Â¿Tiene fecha y hora?": {
+      "main": [
+        [
+          {
+            "node": "Verificar disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Solicitar fecha y hora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "VERSION_ID_AQUI",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "INSTANCE_ID_AQUI"
+  },
+  "id": "WORKFLOW_ID_AQUI",
+  "tags": []
+}

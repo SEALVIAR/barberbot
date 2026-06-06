@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Environment variables
+.env
+.env.*
+
+# Secrets / credentials
+*.credentials.json
+credentials.json
+token.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# VS Code
+.vscode/
+
+# N8n private exports
+n8n/barberbot_workflow.json
+n8n/*private*.json
+n8n/*real*.json
+n8n/My workflow*.json
+n8n/*.backup.json
+n8n/*.local.json
