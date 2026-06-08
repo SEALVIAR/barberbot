@@ -1,0 +1,5156 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const llm = $input.first().json;\n\nlet data = llm.output ?? llm.text ?? llm.response ?? llm;\n\nif (typeof data === 'string') {\n  data = data.replace(/```json/g, '').replace(/```/g, '').trim();\n  data = JSON.parse(data);\n}\n\nconst entrada = $('Renombrar Campos').first().json;\n\nconst intencion = data.intencion || 'desconocido';\nconst duracion = Number(data.duracion) || 30;\n\nfunction crearIntervalo(fecha, hora, duracionMinutos) {\n  if (!fecha || !hora) {\n    return {\n      start_datetime: null,\n      end_datetime: null\n    };\n  }\n\n  const start_datetime = `${fecha}T${hora}:00-05:00`;\n\n  const end_datetime = new Date(\n    new Date(start_datetime).getTime() + duracionMinutos * 60000\n  ).toISOString();\n\n  return {\n    start_datetime,\n    end_datetime\n  };\n}\n\n// Para reservar normalmente\nconst reserva = crearIntervalo(data.fecha, data.hora, duracion);\n\n// Para cambiar hora\nconst nueva_fecha =\n  data.nueva_fecha || (intencion === 'cambiar_hora' ? data.fecha : null);\n\nconst nueva_hora =\n  data.nueva_hora || (intencion === 'cambiar_hora' ? data.hora : null);\n\nconst cambio = crearIntervalo(nueva_fecha, nueva_hora, duracion);\n\nconst chat_id = entrada.chat_id;\n\nreturn [\n  {\n    json: {\n      ...entrada,\n\n      intencion,\n      servicio: data.servicio || null,\n\n      fecha: data.fecha || null,\n      hora: data.hora || null,\n      duracion,\n      respuesta_sugerida: data.respuesta_sugerida || null,\n\n      start_datetime: reserva.start_datetime,\n      end_datetime: reserva.end_datetime,\n\n      nueva_fecha,\n      nueva_hora,\n      nueva_start_datetime: cambio.start_datetime,\n      nueva_end_datetime: cambio.end_datetime,\n\n      buscar_evento_por_chat: `Chat ID: ${chat_id}`,\n\n      tiene_fecha_y_hora: reserva.start_datetime !== null,\n      tiene_nuevo_horario: cambio.start_datetime !== null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        496
+      ],
+      "id": "9ca54551-6976-46cd-a726-ae4572a1c6d2",
+      "name": "Normalizar IA"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1568,
+        496
+      ],
+      "id": "7e33e562-ffbf-4968-bb65-07bdcc417b42",
+      "name": "Recibir Mensajes",
+      "webhookId": "WEBHOOK_ID_HERE",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4c232aa6-4b56-43f1-bcab-1784755eab17",
+              "name": "chat_id",
+              "value": "={{ $json.message.chat.id }}",
+              "type": "number"
+            },
+            {
+              "id": "ffe24f2d-72fc-4372-9bd0-1d8ee763448a",
+              "name": "mensaje_cliente",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "88cdfbb9-7839-4e2a-94fe-a0dd33775541",
+              "name": "nombre_cliente",
+              "value": "={{ $json.message.from.first_name || $json.message.chat.first_name || \"Cliente\" }}",
+              "type": "string"
+            },
+            {
+              "id": "64511ba4-658f-4fb7-9689-67fd9511c85c",
+              "name": "fecha_recepcion",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "4449cfb7-24f8-43e3-9ac6-394c9e3b91e2",
+              "name": "inicio_ms",
+              "value": "={{ Date.now() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1360,
+        496
+      ],
+      "id": "d73efb10-8bd9-4ac7-a4ad-53ccbba6529c",
+      "name": "Renombrar Campos"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres BarberBot, un asistente para una barbería.\n\nAnaliza el siguiente mensaje de un cliente:\n\n\"{{ $json.mensaje_cliente }}\"\n\nFecha y hora actual en Colombia:\n{{ $now.setZone(\"America/Bogota\").toISO() }}\n\nDevuelve SOLO un JSON válido con esta estructura:\n\n{\n  \"intencion\": \"reservar | precios | horarios | cancelar | cambiar_hora | desconocido\",\n  \"servicio\": \"corte | corte_barba | corte_barba_cejas | cejas | barba | corte_cejas | mechas | color_cabello | null\",\n  \"fecha\": \"YYYY-MM-DD | null\",\n  \"hora\": \"HH:mm | null\",\n  \"nueva_fecha\": \"YYYY-MM-DD | null\",\n  \"nueva_hora\": \"HH:mm | null\",\n  \"duracion\": 30,\n  \"respuesta_sugerida\": \"mensaje corto para responder al cliente\"\n}\n\nDuraciones por servicio:\n\n- corte: 30 minutos\n- corte_barba: 45 minutos\n- corte_barba_cejas: 50 minutos\n- cejas: 5 minutos\n- barba: 15 minutos\n- corte_cejas: 35 minutos\n- mechas: 60 minutos\n- color_cabello: 90 minutos\n\nReglas para duración:\n\n- Si detectas un servicio, usa su duración correspondiente.\n- Si no detectas servicio, usa 30.\n\nReglas para fecha y hora:\n\n- Si el cliente da una fecha explícita, conviértela a formato YYYY-MM-DD.\n- Si dice \"hoy\", \"mañana\", \"pasado mañana\" o un día de la semana, calcula la fecha usando la fecha actual en Colombia.\n- Si no hay fecha, usa null.\n- Si hay hora, conviértela a formato HH:mm en 24 horas.\n- Ejemplo: \"3 pm\" debe ser \"15:00\".\n- Ejemplo: \"4 de la tarde\" debe ser \"16:00\".\n- Si no hay hora, usa null.\n- No inventes fecha.\n- No inventes hora.\n\nReglas para reservar:\n\n- Si el cliente quiere reservar pero falta fecha u hora, conserva \"intencion\": \"reservar\".\n- El dato faltante debe ir como null.\n- En \"respuesta_sugerida\", pide únicamente el dato que falta.\n\nReglas para cambiar hora:\n\n- Si el cliente quiere cambiar una cita, usa \"intencion\": \"cambiar_hora\".\n- La nueva fecha debe ir en \"nueva_fecha\".\n- La nueva hora debe ir en \"nueva_hora\".\n- Si dice \"quiero cambiar mi cita para mañana a las 4\",\n  entonces \"nueva_fecha\" debe ser la fecha de mañana y \"nueva_hora\" debe ser \"16:00\".\n- Si no dice nueva fecha u hora, deja \"nueva_fecha\" y \"nueva_hora\" en null.\n- Para facilitar el procesamiento posterior, si detectas una nueva fecha y hora,\n  también puedes copiar esos mismos valores en \"fecha\" y \"hora\".\n\nReglas para respuesta_sugerida:\n\n- Debe ser corta y natural.\n- Si faltan datos para reservar, pide fecha u hora.\n- Si pregunta precios, responde que le mostrarás los precios.\n- Si pregunta horarios, responde que le mostrarás los horarios.\n- Si quiere cancelar, responde que buscarás su cita.\n- Si quiere cambiar hora, responde que revisarás la nueva disponibilidad.\n- Si no entiendes, pide que escriba algo como:\n  \"quiero un corte mañana a las 3 pm\".",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        -1152,
+        496
+      ],
+      "id": "bb2bb130-fbc2-4286-b8c6-4484e1ff4501",
+      "name": "Usar un LLM"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -1152,
+        688
+      ],
+      "id": "a79de243-69f0-4139-be46-bfa43b8efa38",
+      "name": "OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_HERE",
+          "name": "OPENAI_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "reservar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ba45ee71-7228-4c58-86d5-676c028c7f98"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e41fe9a9-3b4c-4fe3-b7bc-3de972ce6394",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "precios",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "093ecf95-1ef6-4808-8611-bdd0f411820b",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "horarios",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "8889e02f-7583-40b8-a5d0-bf2f60ff13ea",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "cancelar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ff5b4b03-5455-46f6-956e-24be53fbd685",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "cambiar_hora",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7a18fa82-a72e-4be9-a6ae-edcfa4a292d3",
+                    "leftValue": "={{ $json.intencion }}",
+                    "rightValue": "desconocido",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -368,
+        496
+      ],
+      "id": "54b6a1e7-785e-4ee8-a917-9ac3f0568a5f",
+      "name": "Categorizar"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        528,
+        1472
+      ],
+      "id": "ee7c5008-0539-4a9c-9a49-5811f4adfcaa",
+      "name": "No entender la solicitud",
+      "webhookId": "WEBHOOK_ID_HERE",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        496
+      ],
+      "id": "e810ddbf-c7a5-4c7f-8dd4-03b81dde3efa",
+      "name": "Horarios Barberia",
+      "webhookId": "18709c5f-a09f-431a-80f4-1e450c370a67",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const normalizado = $('Normalizar IA').first().json;\n\nconst eventos = $input.all()\n  .map(item => item.json)\n  .filter(evento => evento && evento.id);\n\nfunction obtenerInicio(evento) {\n  return (\n    evento.start?.dateTime ||\n    evento.start?.date ||\n    evento.startTime ||\n    evento.start ||\n    null\n  );\n}\n\nfunction obtenerFin(evento) {\n  return (\n    evento.end?.dateTime ||\n    evento.end?.date ||\n    evento.endTime ||\n    evento.end ||\n    null\n  );\n}\n\nfunction obtenerDuracionDesdeDescripcion(descripcion) {\n  if (!descripcion) return null;\n\n  const match = descripcion.match(/Duraci[oó]n:\\s*(\\d+)\\s*minutos?/i);\n\n  if (!match) return null;\n\n  return Number(match[1]);\n}\n\nconst ahora = new Date();\n\nconst eventosValidos = eventos\n  .filter(evento => {\n    const descripcion = evento.description || '';\n    const inicio = obtenerInicio(evento);\n\n    const tieneChat = descripcion.includes(`Chat ID: ${normalizado.chat_id}`);\n    const estaCancelada = descripcion.toLowerCase().includes('estado: cancelada');\n    const esFutura = inicio ? new Date(inicio) >= ahora : true;\n\n    return tieneChat && !estaCancelada && esFutura;\n  })\n  .sort((a, b) => {\n    const inicioA = new Date(obtenerInicio(a) || 0);\n    const inicioB = new Date(obtenerInicio(b) || 0);\n    return inicioA - inicioB;\n  });\n\nif (eventosValidos.length === 0) {\n  return [\n    {\n      json: {\n        ...normalizado,\n        evento_encontrado: false,\n        event_id: null,\n        evento_actual_summary: null,\n        evento_actual_description: null,\n        evento_actual_inicio: null,\n        evento_actual_fin: null,\n        duracion_original_minutos: null,\n        debug_eventos_recibidos: eventos.length\n      }\n    }\n  ];\n}\n\nconst evento = eventosValidos[0];\n\nconst inicioOriginal = obtenerInicio(evento);\nconst finOriginal = obtenerFin(evento);\nconst descripcionOriginal = evento.description || '';\n\nlet duracionOriginalMinutos = obtenerDuracionDesdeDescripcion(descripcionOriginal);\n\nif (!duracionOriginalMinutos && inicioOriginal && finOriginal) {\n  duracionOriginalMinutos = Math.round(\n    (new Date(finOriginal).getTime() - new Date(inicioOriginal).getTime()) / 60000\n  );\n}\n\nif (!duracionOriginalMinutos) {\n  duracionOriginalMinutos = 30;\n}\n\nreturn [\n  {\n    json: {\n      ...normalizado,\n      evento_encontrado: true,\n      event_id: evento.id,\n      evento_actual_summary: evento.summary || 'Cita BarberBot',\n      evento_actual_description: descripcionOriginal,\n      evento_actual_inicio: inicioOriginal,\n      evento_actual_fin: finOriginal,\n      duracion_original_minutos: duracionOriginalMinutos,\n      debug_eventos_recibidos: eventos.length\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        1072
+      ],
+      "id": "851eba75-995a-4d9e-b5d0-a0ee089b420a",
+      "name": "Elegir la cita encontrada"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "49094ac0-a3b2-439d-8c4b-eb757fd9a5a0",
+              "leftValue": "={{ $json.evento_encontrado === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        784,
+        1072
+      ],
+      "id": "8eaa64dc-381a-4d65-a114-34fcfa3e07ab",
+      "name": "¿Encontró cita?"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "calendar": {
+          "__rl": true,
+          "value": "correo@dominio.com",
+          "mode": "list",
+          "cachedResultName": "correo@dominio.com"
+        },
+        "eventId": "={{ $('Elegir la cita encontrada').first().json.event_id }}",
+        "updateFields": {
+          "description": "=Cliente: {{ $('Calcular nuevo horario').first().json.nombre_cliente }}\nChat ID: {{ $('Calcular nuevo horario').first().json.chat_id }}\nServicio: {{ $('Calcular nuevo horario').first().json.servicio || \"No especificado\" }}\nDuración: {{ $('Calcular nuevo horario').first().json.duracion_usada_para_cambio }} minutos\nMensaje original: {{ $('Calcular nuevo horario').first().json.mensaje_cliente }}\nEstado: activa\nÚltima acción: cambio de hora\nNueva fecha: {{ $('Calcular nuevo horario').first().json.nueva_fecha }}\nNueva hora: {{ $('Calcular nuevo horario').first().json.nueva_hora }}",
+          "end": "={{ $('Calcular nuevo horario').first().json.nueva_end_datetime_final }}",
+          "start": "={{ $('Calcular nuevo horario').first().json.nueva_start_datetime }}",
+          "summary": "={{ $('Calcular nuevo horario').first().json.evento_actual_summary }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1728,
+        864
+      ],
+      "id": "684fd8d9-23e2-4266-9a28-4d55e5bc5c88",
+      "name": "Actualizar evento",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_HERE",
+          "name": "GOOGLE_CALENDAR_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2352,
+        864
+      ],
+      "id": "c11275ac-1926-403c-bff0-692b82323c3c",
+      "name": "Confirmar cambio",
+      "webhookId": "e7536117-c7c2-49e2-8685-f74df9969b63",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2160,
+        1088
+      ],
+      "id": "4bfb6a30-a58a-46e0-b230-8fcc2055f950",
+      "name": "Responder no disponibilidad",
+      "webhookId": "51144a3b-1039-467f-8f5f-155b6d80501c",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst nuevaStart = item.nueva_start_datetime;\nconst duracionOriginal = Number(item.duracion_original_minutos) || 30;\n\nif (!nuevaStart) {\n  return [\n    {\n      json: {\n        ...item,\n        error_cambio_hora: true,\n        mensaje_error: 'No se encontró nueva fecha y hora para reprogramar.'\n      }\n    }\n  ];\n}\n\nconst nuevaEnd = new Date(\n  new Date(nuevaStart).getTime() + duracionOriginal * 60000\n).toISOString();\n\nreturn [\n  {\n    json: {\n      ...item,\n      nueva_end_datetime_final: nuevaEnd,\n      duracion_usada_para_cambio: duracionOriginal\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        992
+      ],
+      "id": "1d5896b0-1bcd-4b17-824d-53abd99eaed0",
+      "name": "Calcular nuevo horario"
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "value": "correo@dominio.com",
+          "mode": "list",
+          "cachedResultName": "correo@dominio.com"
+        },
+        "timeMin": "={{ $('Calcular nuevo horario').first().json.nueva_start_datetime }}",
+        "timeMax": "={{ $('Calcular nuevo horario').first().json.nueva_end_datetime_final }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1280,
+        992
+      ],
+      "id": "583a7156-f38d-49f2-85bd-4d8d1bc3c7a6",
+      "name": "Consultar disponibilidad nueva hora",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_HERE",
+          "name": "GOOGLE_CALENDAR_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f022fa27-de90-4a47-8dc2-51781c9719cd",
+              "leftValue": "={{ $json.available === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1504,
+        992
+      ],
+      "id": "e7faa21d-f74e-4e79-8e84-305463cdc7a0",
+      "name": "Si existe disponibildad"
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "value": "correo@dominio.com",
+          "mode": "list",
+          "cachedResultName": "correo@dominio.com"
+        },
+        "timeMin": "={{ $('Normalizar IA').first().json.start_datetime }}",
+        "timeMax": "={{ $('Normalizar IA').first().json.end_datetime }}",
+        "options": {
+          "outputFormat": "availability",
+          "timezone": {
+            "__rl": true,
+            "value": "America/Bogota",
+            "mode": "list",
+            "cachedResultName": "America/Bogota"
+          }
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        272,
+        -144
+      ],
+      "id": "9558be57-143e-434c-b5cc-d906ef4054d1",
+      "name": "Verificar disponibilidad",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_HERE",
+          "name": "GOOGLE_CALENDAR_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "correo@dominio.com",
+          "mode": "list",
+          "cachedResultName": "correo@dominio.com"
+        },
+        "start": "={{ $('Calcular riesgo difuso').first().json.start_datetime }}",
+        "end": "={{ $('Calcular riesgo difuso').first().json.end_datetime }}",
+        "additionalFields": {
+          "description": "=Cliente: {{ $('Calcular riesgo difuso').first().json.nombre_cliente }}\nChat ID: {{ $('Calcular riesgo difuso').first().json.chat_id }}\nServicio: {{ $('Calcular riesgo difuso').first().json.servicio }}\nDuración: {{ $('Calcular riesgo difuso').first().json.duracion }} minutos\nEstado: activa\n\nRiesgo operativo: {{ $('Calcular riesgo difuso').first().json.riesgo_categoria }}\nPuntaje de riesgo: {{ $('Calcular riesgo difuso').first().json.riesgo_num }}\nAcción recomendada: {{ $('Calcular riesgo difuso').first().json.accion_racional }}\n\nMensaje original:\n{{ $('Calcular riesgo difuso').first().json.mensaje_cliente }}\n",
+          "summary": "=BarberBot - {{ $('Calcular riesgo difuso').first().json.servicio }} - {{ $('Calcular riesgo difuso').first().json.nombre_cliente }} - Riesgo {{ $('Calcular riesgo difuso').first().json.riesgo_categoria }}\n"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1472,
+        -320
+      ],
+      "id": "58ad2994-bc27-4210-bbfa-515923278f18",
+      "name": "Crear la cita",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_HERE",
+          "name": "GOOGLE_CALENDAR_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        640,
+        80
+      ],
+      "id": "d971e969-4231-40bd-85be-81a5cc5e0d7e",
+      "name": "Solicitar fecha y hora",
+      "webhookId": "134a4507-45b3-4833-8cc2-3b39da37b1e5",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2160,
+        -320
+      ],
+      "id": "b2313b35-c0a2-443f-843e-4dca26518ba2",
+      "name": "Mensaje confirmar creación de la cita",
+      "webhookId": "30cda7b0-488f-4f0e-a201-3bb66b693365",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1344,
+        32
+      ],
+      "id": "eb58b018-7239-44c2-a08f-0bf4a809e315",
+      "name": "Mensaje de no disponibilidad",
+      "webhookId": "2f66820b-d7ef-4be5-bf2a-e0f3a721985c",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const normalizado = $('Normalizar IA').first().json;\n\nconst eventos = $input.all()\n  .map(item => item.json)\n  .filter(evento => evento && evento.id);\n\nfunction obtenerInicio(evento) {\n  return (\n    evento.start?.dateTime ||\n    evento.start?.date ||\n    evento.startTime ||\n    evento.start ||\n    null\n  );\n}\n\nfunction obtenerFin(evento) {\n  return (\n    evento.end?.dateTime ||\n    evento.end?.date ||\n    evento.endTime ||\n    evento.end ||\n    null\n  );\n}\n\nfunction obtenerDuracionDesdeDescripcion(descripcion) {\n  if (!descripcion) return null;\n\n  const match = descripcion.match(/Duraci[oó]n:\\s*(\\d+)\\s*minutos?/i);\n\n  if (!match) return null;\n\n  return Number(match[1]);\n}\n\nconst ahora = new Date();\n\nconst eventosValidos = eventos\n  .filter(evento => {\n    const descripcion = evento.description || '';\n    const inicio = obtenerInicio(evento);\n\n    const tieneChat = descripcion.includes(`Chat ID: ${normalizado.chat_id}`);\n    const estaCancelada = descripcion.toLowerCase().includes('estado: cancelada');\n    const esFutura = inicio ? new Date(inicio) >= ahora : true;\n\n    return tieneChat && !estaCancelada && esFutura;\n  })\n  .sort((a, b) => {\n    const inicioA = new Date(obtenerInicio(a) || 0);\n    const inicioB = new Date(obtenerInicio(b) || 0);\n    return inicioA - inicioB;\n  });\n\nif (eventosValidos.length === 0) {\n  return [\n    {\n      json: {\n        ...normalizado,\n        evento_encontrado: false,\n        event_id: null,\n        evento_actual_summary: null,\n        evento_actual_description: null,\n        evento_actual_inicio: null,\n        evento_actual_fin: null,\n        duracion_original_minutos: null,\n        debug_eventos_recibidos: eventos.length\n      }\n    }\n  ];\n}\n\nconst evento = eventosValidos[0];\n\nconst inicioOriginal = obtenerInicio(evento);\nconst finOriginal = obtenerFin(evento);\nconst descripcionOriginal = evento.description || '';\n\nlet duracionOriginalMinutos = obtenerDuracionDesdeDescripcion(descripcionOriginal);\n\nif (!duracionOriginalMinutos && inicioOriginal && finOriginal) {\n  duracionOriginalMinutos = Math.round(\n    (new Date(finOriginal).getTime() - new Date(inicioOriginal).getTime()) / 60000\n  );\n}\n\nif (!duracionOriginalMinutos) {\n  duracionOriginalMinutos = 30;\n}\n\nreturn [\n  {\n    json: {\n      ...normalizado,\n      evento_encontrado: true,\n      event_id: evento.id,\n      evento_actual_summary: evento.summary || 'Cita BarberBot',\n      evento_actual_description: descripcionOriginal,\n      evento_actual_inicio: inicioOriginal,\n      evento_actual_fin: finOriginal,\n      duracion_original_minutos: duracionOriginalMinutos,\n      debug_eventos_recibidos: eventos.length\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        704
+      ],
+      "id": "6d0439c9-b5ab-4aee-9877-8cc4a6ebd70d",
+      "name": "Elegir cita para cancelar"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1456,
+        592
+      ],
+      "id": "183c7d12-9992-49ea-8182-0f5d916794d9",
+      "name": "Mensaje cancelar evento",
+      "webhookId": "d9c5f644-e8ca-44eb-ac60-f9e3e367346b",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6adbd2be-03fa-4799-8225-0e442ee05491",
+              "leftValue": "={{ $('Normalizar IA').first().json.tiene_fecha_y_hora === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        64
+      ],
+      "id": "48a05dd9-ccaa-40cb-9c83-0c51554949ba",
+      "name": "¿Tiene fecha y hora?"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Hoja 1",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -576,
+        496
+      ],
+      "id": "f5623830-8b70-4bae-95c3-8c78f330bf42",
+      "name": "Registrar solicitud recibida",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Calcular riesgo difuso').first().json;\nconst evento = $input.first().json;\n\nconst respuesta = `Listo ✅ Tu cita quedó agendada.\n\nServicio: ${base.servicio}\nFecha: ${base.fecha}\nHora: ${base.hora}\n\n¡Te esperamos en la barbería!`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: base.nueva_fecha || null,\n      nueva_hora: base.nueva_hora || null,\n      disponibilidad: 'disponible',\n      estado_operacion: 'creada',\n      evento_id: evento.id || evento.eventId || null,\n\n      // Por ahora básico. Luego lo reemplazas con lógica difusa.\n      riesgo_num: base.riesgo_num,\n      riesgo_categoria: base.riesgo_categoria,\n      accion_racional: base.accion_racional,\n\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        -320
+      ],
+      "id": "3a15d9fc-abdd-4ed7-a473-1111ed3c27b9",
+      "name": "Preparar log cita creada"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}",
+            "resultado_cita": "pendiente",
+            "estado_cita": "activa",
+            "historial_cliente": "={{ $('Calcular riesgo difuso').first().json.historial_cliente }}",
+            "historial_confianza": "={{ $('Calcular riesgo difuso').first().json.historial_confianza }}",
+            "historial_eventos_evaluables": "={{ $('Calcular riesgo difuso').first().json.historial_eventos_evaluables }}",
+            "anticipacion_horas": "={{ $('Calcular riesgo difuso').first().json.anticipacion_horas }}",
+            "confirmacion_cliente": "={{ $('Calcular riesgo difuso').first().json.confirmacion_cliente }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "resultado_cita",
+              "displayName": "resultado_cita",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado_cita",
+              "displayName": "estado_cita",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "historial_cliente",
+              "displayName": "historial_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "historial_confianza",
+              "displayName": "historial_confianza",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "historial_eventos_evaluables",
+              "displayName": "historial_eventos_evaluables",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "anticipacion_horas",
+              "displayName": "anticipacion_horas",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "confirmacion_cliente",
+              "displayName": "confirmacion_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1888,
+        -320
+      ],
+      "id": "a5d005f9-2220-4af0-aa4b-94b2b72bd567",
+      "name": "Registrar resultado final",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Normalizar IA').first().json;\n\nconst respuesta = `Lo siento, ese horario ya está ocupado 😕.\n\nPor favor dime otra fecha u otra hora para revisar disponibilidad.`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: base.nueva_fecha || null,\n      nueva_hora: base.nueva_hora || null,\n      disponibilidad: 'ocupado',\n      estado_operacion: 'no_creada_horario_ocupado',\n      evento_id: null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'pedir otro horario',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        32
+      ],
+      "id": "a3f813a6-382c-4cc4-8eec-5e8fe671bf88",
+      "name": "Preparar log horario ocupado"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1136,
+        32
+      ],
+      "id": "6074b074-158b-4eaa-803e-c5858bd55975",
+      "name": "Registrar resultado final no disponibilidad",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Normalizar IA').first().json;\n\nconst respuesta =\n  base.respuesta_sugerida ||\n  'Claro, puedo ayudarte a reservar. ¿Qué fecha y hora prefieres?';\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: base.nueva_fecha || null,\n      nueva_hora: base.nueva_hora || null,\n      disponibilidad: 'no_consultada',\n      estado_operacion: 'datos_incompletos',\n      evento_id: null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'pedir fecha y hora',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        80
+      ],
+      "id": "d73b56a5-2590-4ee2-ab0d-c2f2cdefda71",
+      "name": "Preparar log datos incompletos"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        432,
+        80
+      ],
+      "id": "8deb5ef8-edf0-4435-a22e-f976586afd19",
+      "name": "Registrar resultado final datos incompletos",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "correo@dominio.com",
+          "mode": "list",
+          "cachedResultName": "correo@dominio.com"
+        },
+        "limit": "=50",
+        "options": {
+          "query": "={{ $('Normalizar IA').item.json.chat_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        16,
+        704
+      ],
+      "id": "15f004e7-9653-4be1-8008-2425c9fd3096",
+      "name": "Buscar cita para cancelar",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_HERE",
+          "name": "GOOGLE_CALENDAR_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "49094ac0-a3b2-439d-8c4b-eb757fd9a5a0",
+              "leftValue": "={{ $json.evento_encontrado === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        624,
+        704
+      ],
+      "id": "80071911-7b5b-4fec-b3f6-65badcc37b49",
+      "name": "¿Encontró cita a cancelar?"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "correo@dominio.com",
+          "mode": "list",
+          "cachedResultName": "correo@dominio.com"
+        },
+        "eventId": "={{ $('Elegir cita para cancelar').first().json.event_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        832,
+        592
+      ],
+      "id": "322c4eff-2433-4153-b8a7-04e8abb92ea0",
+      "name": "Cancelar cita",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_HERE",
+          "name": "GOOGLE_CALENDAR_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "correo@dominio.com",
+          "mode": "list",
+          "cachedResultName": "correo@dominio.com"
+        },
+        "limit": "=50",
+        "options": {
+          "query": "={{ $('Normalizar IA').item.json.chat_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        320,
+        1072
+      ],
+      "id": "f3f09836-f9a2-4d10-ac37-eb061caed61c",
+      "name": "Buscar cita para cambiar horario",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "GOOGLE_CALENDAR_CREDENTIAL_HERE",
+          "name": "GOOGLE_CALENDAR_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f17c5e4e-6253-442f-a5bb-d001edf657d0",
+              "leftValue": "={{ $json.available === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        -144
+      ],
+      "id": "d1b84306-9261-4fe3-a3d8-5f48d1c23306",
+      "name": "¿Existe disponibilidad?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Calcular nuevo horario').first().json;\n\nconst respuesta = `Listo ✅ Cambié tu cita.\n\nNueva fecha: ${base.nueva_fecha}\nNueva hora: ${base.nueva_hora}\nDuración: ${base.duracion_usada_para_cambio} minutos\n\n¡Te esperamos en la barbería!`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      duracion: base.duracion_usada_para_cambio || base.duracion,\n      disponibilidad: 'disponible',\n      estado_operacion: 'cambiada',\n      evento_id: base.event_id || null,\n      riesgo_num: 0,\n      riesgo_categoria: 'bajo',\n      accion_racional: 'actualizar evento',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        864
+      ],
+      "id": "4c8d76e6-fedf-4bd7-8ac5-60f30c852f25",
+      "name": "Preparar log cambio confirmado"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2144,
+        864
+      ],
+      "id": "6f44ef9c-0e5a-473e-a37a-14b500e9262f",
+      "name": "Registrar resultado final cambio",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1952,
+        1088
+      ],
+      "id": "ba8063ff-4ab7-471a-b922-92a3c8d4eec0",
+      "name": "Registrar resultado final cambio ocupado",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Elegir cita para cancelar').first().json;\n\nconst respuesta = `Listo ✅ Tu cita fue cancelada.\n\nCita cancelada:\n${base.evento_actual_summary}\n\nYa puedes solicitar una nueva cita cuando quieras.`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: base.nueva_fecha || null,\n      nueva_hora: base.nueva_hora || null,\n      disponibilidad: 'liberada',\n      estado_operacion: 'cancelada',\n      evento_id: base.event_id || null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'eliminar evento',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        592
+      ],
+      "id": "ffa64f8d-6233-4522-9bb5-72d073694da6",
+      "name": "Preparar log cancelación"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1232,
+        592
+      ],
+      "id": "a1d17126-c291-4ffb-a2b6-2a8cd744591c",
+      "name": "Registrar resultado final cancelación",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Normalizar IA').first().json;\n\nconst respuesta = `No encontré una cita activa asociada a tu chat 😕.\n\nSi tienes una cita, revisa que la hayas reservado desde este mismo chat de Telegram.`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: base.nueva_fecha || null,\n      nueva_hora: base.nueva_hora || null,\n      disponibilidad: 'no_aplica',\n      estado_operacion: 'cita_no_encontrada',\n      evento_id: null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'informar cita no encontrada',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        800
+      ],
+      "id": "ce86b0f5-eb7a-4deb-989a-253afa52daa7",
+      "name": "Preparar log cancelación sin cita"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1056,
+        800
+      ],
+      "id": "1c20b3c4-8f7a-424b-b05c-d435f3936360",
+      "name": "Registrar resultado final cancelación sin cita",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_sugerida }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        1264
+      ],
+      "id": "36469b72-3b8a-4882-9f40-ee026e283184",
+      "name": "Responder para obtener detalles",
+      "webhookId": "68220feb-0c39-452d-86ff-61d91a9d91c2",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "35f8b23f-a3f6-43b7-8d1e-3692f5dbe4cc",
+              "leftValue": "={{ $('Normalizar IA').first().json.tiene_nuevo_horario === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        48,
+        1168
+      ],
+      "id": "7c1c5a8c-c4f7-4896-97da-7f41760cc5a2",
+      "name": "¿Tiene nuevo horario?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Normalizar IA').first().json;\n\nconst respuesta = `Nuestros precios son:\n\nCorte: $19.000 aprox 30 min\nCorte con barba: $22.000 aprox 45 min\nCorte con barba y cejas: $23.000 aprox 50 min\nCejas: $5.000 aprox 5 min\nBarba: $8.000 aprox 15 min\nCorte con cejas: $20.000 aprox 35 min\nMechas: $80.000 aprox 1 hora\nColor cabello: $100.000 aprox 1 h y 30 min\n\n¿Quieres que te ayude a reservar una cita?`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: null,\n      nueva_hora: null,\n      disponibilidad: 'no_aplica',\n      estado_operacion: 'respuesta_precios',\n      evento_id: null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'responder información',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        288
+      ],
+      "id": "812f0217-4c16-4a34-9840-7bd5a6270675",
+      "name": "Preparar log precios y duración"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Normalizar IA').first().json;\n\nconst respuesta = `Atendemos de lunes a sábado de 9:00 a.m. a 7:00 p.m.\n\nPara reservar, dime el servicio, la fecha y la hora que prefieres.`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: null,\n      nueva_hora: null,\n      disponibilidad: 'no_aplica',\n      estado_operacion: 'respuesta_horarios',\n      evento_id: null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'responder información',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        496
+      ],
+      "id": "c9118099-2e97-427f-9c5f-e459edaf3b50",
+      "name": "Preparar log horarios barberia"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        240,
+        496
+      ],
+      "id": "d6a2b51d-fdc3-4980-9122-4b3b78e2ff62",
+      "name": "Registrar resultado final horarios",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        240,
+        288
+      ],
+      "id": "20bb82e4-ab0a-4a93-a44e-c4e5ece5f13c",
+      "name": "Registrar resultado final precios y duracion",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        288
+      ],
+      "id": "7adb1e02-fe4e-4a2c-9a51-d15bbbecc11a",
+      "name": "Precios, servicios y duración aproximada",
+      "webhookId": "ea8fab0d-68a1-468b-8976-6905b9eb1a3c",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Normalizar IA').first().json;\n\nconst respuesta = `No entendí muy bien tu solicitud 😅\nPuedes escribirme algo como: \"Quiero reservar un corte mañana a las 3 pm\"`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: null,\n      nueva_hora: null,\n      disponibilidad: 'no_aplica',\n      estado_operacion: 'desconocido',\n      evento_id: null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'pedir reformulación',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        1472
+      ],
+      "id": "88501f0d-a9aa-4f15-b330-c886f4d64b43",
+      "name": "Preparar log desconocido"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        304,
+        1472
+      ],
+      "id": "06624e83-cd81-4a50-8673-5c807b7671ac",
+      "name": "Registrar resultado final desconocido",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Calcular nuevo horario').first().json;\n\nconst respuesta = `Lo siento, ese nuevo horario ya está ocupado 😕.\n\nPor favor dime otra fecha u otra hora para revisar disponibilidad.`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      duracion: base.duracion_usada_para_cambio || base.duracion,\n      disponibilidad: 'ocupado',\n      estado_operacion: 'cambio_no_realizado_horario_ocupado',\n      evento_id: base.event_id || null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'pedir otro horario',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        1088
+      ],
+      "id": "a0e28f01-879b-4872-b7cc-c26026d7cb18",
+      "name": "Preparar log horario no libre"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Normalizar IA').first().json;\n\nconst respuesta = `Claro, puedo ayudarte a cambiar tu cita.\n\nPor favor dime la nueva fecha y hora.\n\nEjemplo:\n\"Quiero cambiar mi cita para mañana a las 4 pm\"`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: base.nueva_fecha || null,\n      nueva_hora: base.nueva_hora || null,\n      disponibilidad: 'no_consultada',\n      estado_operacion: 'cambio_sin_nuevo_horario',\n      evento_id: null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'pedir nueva fecha y hora',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        1264
+      ],
+      "id": "3bbee9ae-d3d4-47d4-a1e5-90e2600d67bf",
+      "name": "Preparar log cambio sin nuevo horario"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        560,
+        1264
+      ],
+      "id": "d95429b2-205b-4e55-b76c-728516999bd8",
+      "name": "Registrar resultado final cambio sin horario",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Elegir la cita encontrada').first().json;\n\nconst respuesta = `No encontré una cita activa asociada a tu chat 😕.\n\nPrimero debes tener una cita reservada para poder cambiarla.`;\n\nreturn [\n  {\n    json: {\n      ...base,\n      nueva_fecha: base.nueva_fecha || null,\n      nueva_hora: base.nueva_hora || null,\n      disponibilidad: 'no_aplica',\n      estado_operacion: 'cambio_cita_no_encontrada',\n      evento_id: null,\n      riesgo_num: 0,\n      riesgo_categoria: 'no_aplica',\n      accion_racional: 'informar cita no encontrada',\n      tiempo_respuesta_ms: Date.now() - Number(base.inicio_ms || Date.now()),\n      respuesta_final: respuesta,\n      fecha_finalizacion: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        1200
+      ],
+      "id": "86badf9d-cc54-48e8-9c37-2493fad9b907",
+      "name": "Preparar log cambio cita no encontrada"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fecha_recepcion": "={{ $json.fecha_recepcion }}",
+            "chat_id": "={{ $json.chat_id }}",
+            "nombre_cliente": "={{ $json.nombre_cliente }}",
+            "mensaje_cliente": "={{ $json.mensaje_cliente }}",
+            "intencion": "={{ $json.intencion }}",
+            "servicio": "={{ $json.servicio }}",
+            "fecha": "={{ $json.fecha }}",
+            "hora": "={{ $json.hora }}",
+            "duracion": "={{ $json.duracion }}",
+            "respuesta_sugerida": "={{ $json.respuesta_sugerida }}",
+            "nueva_fecha": "={{ $json.nueva_fecha }}",
+            "nueva_hora": "={{ $json.nueva_hora }}",
+            "disponibilidad": "={{ $json.disponibilidad }}",
+            "estado_operacion": "={{ $json.estado_operacion }}",
+            "evento_id": "={{ $json.evento_id }}",
+            "riesgo_num": "={{ $json.riesgo_num }}",
+            "riesgo_categoria": "={{ $json.riesgo_categoria }}",
+            "accion_racional": "={{ $json.accion_racional }}",
+            "tiempo_respuesta_ms": "={{ $json.tiempo_respuesta_ms }}",
+            "respuesta_final": "={{ $json.respuesta_final }}",
+            "fecha_finalizacion": "={{ $json.fecha_finalizacion }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "fecha_recepcion",
+              "displayName": "fecha_recepcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre_cliente",
+              "displayName": "nombre_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mensaje_cliente",
+              "displayName": "mensaje_cliente",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intencion",
+              "displayName": "intencion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "servicio",
+              "displayName": "servicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha",
+              "displayName": "fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "hora",
+              "displayName": "hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duracion",
+              "displayName": "duracion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_sugerida",
+              "displayName": "respuesta_sugerida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_fecha",
+              "displayName": "nueva_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nueva_hora",
+              "displayName": "nueva_hora",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "disponibilidad",
+              "displayName": "disponibilidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado_operacion",
+              "displayName": "estado_operacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evento_id",
+              "displayName": "evento_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_num",
+              "displayName": "riesgo_num",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "riesgo_categoria",
+              "displayName": "riesgo_categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "accion_racional",
+              "displayName": "accion_racional",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tiempo_respuesta_ms",
+              "displayName": "tiempo_respuesta_ms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "respuesta_final",
+              "displayName": "respuesta_final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_finalizacion",
+              "displayName": "fecha_finalizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1280,
+        1200
+      ],
+      "id": "a6a43b44-f2f0-4e10-b485-a9b2705485d9",
+      "name": "Registrar resultado final cambio cita no encontrada",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1488,
+        1200
+      ],
+      "id": "fe36fe0a-a168-4744-918e-5137880400cf",
+      "name": "Mensaje cambio cita no encontrada",
+      "webhookId": "5dc618e2-8dc3-4f5d-b15f-6a2ddba5d321",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.respuesta_final }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        800
+      ],
+      "id": "979789ab-ccff-4d66-9d29-a3c8fa8ba64d",
+      "name": "Mensaje no encontrar cita",
+      "webhookId": "f44cf368-b6aa-47fa-85f1-8a9a4eb4b3ea",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_HERE",
+          "name": "TELEGRAM_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID_HERE",
+          "mode": "list",
+          "cachedResultName": "barberbot_history",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 279017707,
+          "mode": "list",
+          "cachedResultName": "Fase 2",
+          "cachedResultUrl": "GOOGLE_SHEET_URL_HERE"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "chat_id",
+              "lookupValue": "={{ $('Normalizar IA').first().json.chat_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        864,
+        -320
+      ],
+      "id": "f3a8fc34-04ae-4d04-9ea3-923d88ecb1b3",
+      "name": "Obtener historial del chat",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_HERE",
+          "name": "GOOGLE_SHEETS_CREDENTIAL_HERE"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Normalizar IA').first().json;\nconst chatId = String(base.chat_id || '').trim();\n\n// Normaliza textos para evitar problemas con mayúsculas, tildes o espacios\nfunction normalizarTexto(valor) {\n  return String(valor || '')\n    .trim()\n    .toLowerCase()\n    .normalize('NFD')\n    .replace(/[\\u0300-\\u036f]/g, '');\n}\n\n// Filas encontradas en Google Sheets para este cliente\nconst filas = $input.all()\n  .map(item => item.json)\n  .filter(row => String(row.chat_id || '').trim() === chatId);\n\n// Contadores\nlet asistencias = 0;\nlet noShows = 0;\nlet canceladasTarde = 0;\nlet canceladasATiempo = 0;\nlet reprogramadas = 0;\nlet pendientes = 0;\n\nfor (const row of filas) {\n  const resultado = normalizarTexto(\n    row.resultado_cita ||\n    row.estado_cita ||\n    row.resultado_final ||\n    ''\n  );\n\n  if (\n    resultado === 'asistio'\n  ) {\n    asistencias++;\n  }\n\n  else if (\n    resultado === 'no asistio'\n  ) {\n    noShows++;\n  }\n\n  else if (\n    resultado === 'cancelada_tarde'\n  ) {\n    canceladasTarde++;\n  }\n\n  else if (\n    resultado === 'cancelada a tiempo'\n  ) {\n    canceladasATiempo++;\n  }\n\n  else if (\n    resultado === 'reprogramada'\n  ) {\n    reprogramadas++;\n  }\n\n  else {\n    pendientes++;\n  }\n}\n\n// Solo contamos eventos que realmente sirven para medir cumplimiento\nconst eventosEvaluables = asistencias + noShows + canceladasTarde;\n\n// Valor neutral para clientes nuevos o sin historial suficiente\nconst valorNeutral = 0.6;\n\n// Si no hay eventos evaluables, no fingimos que conocemos el historial\nlet cumplimientoObservado = null;\n\nif (eventosEvaluables > 0) {\n  cumplimientoObservado = asistencias / eventosEvaluables;\n}\n\n// Confianza en el historial:\n// con pocas citas, no confiamos demasiado;\n// con 5 o más citas evaluables, ya confiamos bastante.\nconst confianzaHistorial = Math.min(1, eventosEvaluables / 5);\n\nlet historial_cliente;\n\nif (cumplimientoObservado === null) {\n  historial_cliente = valorNeutral;\n} else {\n  historial_cliente =\n    valorNeutral * (1 - confianzaHistorial) +\n    cumplimientoObservado * confianzaHistorial;\n}\n\n// Limitar entre 0 y 1\nhistorial_cliente = Math.max(0, Math.min(1, historial_cliente));\nhistorial_cliente = Number(historial_cliente.toFixed(2));\n\nreturn [\n  {\n    json: {\n      ...base,\n\n      historial_cliente,\n      historial_confianza: Number(confianzaHistorial.toFixed(2)),\n      historial_eventos_evaluables: eventosEvaluables,\n\n      historial_asistencias: asistencias,\n      historial_no_shows: noShows,\n      historial_canceladas_tarde: canceladasTarde,\n      historial_canceladas_a_tiempo: canceladasATiempo,\n      historial_reprogramadas: reprogramadas,\n      historial_pendientes: pendientes\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        -320
+      ],
+      "id": "e7127676-57f9-4b07-beef-493038a54e8d",
+      "name": "Calcular historial cliente"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Este nodo debe ir DESPUÉS del nodo que calcula el historial del cliente.\n// Por eso usamos $input.first().json, porque ya viene con historial_cliente.\nconst item = $input.first().json;\n\nconst fecha = item.fecha;\nconst hora = item.hora;\nconst servicio = item.servicio;\nconst duracion = Number(item.duracion) || 30;\n\n// Normalizamos la hora por si viene como \"15:00\" o \"15:00:00\"\nconst horaLimpia = String(hora || '').slice(0, 5);\n\n// Fecha y hora de la cita\nconst ahora = new Date();\nconst inicioCita = new Date(`${fecha}T${horaLimpia}:00-05:00`);\n\nconst diferenciaMs = inicioCita.getTime() - ahora.getTime();\n\nconst anticipacion_horas = Number.isFinite(diferenciaMs)\n  ? Math.max(0, Math.round(diferenciaMs / 36e5))\n  : 0;\n\nconst hora_cita = Number(horaLimpia.split(':')[0]) || 0;\n\n// Historial real calculado desde Google Sheets.\n// Si por alguna razón no viene, usamos un valor neutral.\nlet historial_cliente = Number(item.historial_cliente);\n\nif (!Number.isFinite(historial_cliente)) {\n  historial_cliente = 0.6;\n}\n\n// Lo limitamos entre 0 y 1\nhistorial_cliente = Math.max(0, Math.min(1, historial_cliente));\n\n// Confianza del historial, viene del nodo anterior.\n// No es obligatoria para el cálculo, pero sirve para justificar y mostrar.\nconst historial_confianza = Number(item.historial_confianza || 0);\n\n// Confirmación del cliente.\n// No mide historial, sino qué tan completa está la solicitud actual.\nconst tieneServicio = Boolean(servicio);\nconst tieneFecha = Boolean(fecha);\nconst tieneHora = Boolean(hora);\n\nlet confirmacion_cliente = 0.3;\n\nif (tieneServicio && tieneFecha && tieneHora) {\n  confirmacion_cliente = 0.85;\n} else if (tieneFecha && tieneHora) {\n  confirmacion_cliente = 0.65;\n} else if (tieneFecha || tieneHora || tieneServicio) {\n  confirmacion_cliente = 0.45;\n}\n\n// Funciones de pertenencia difusa\n\nfunction bajo(x, a, b) {\n  if (x <= a) return 1;\n  if (x >= b) return 0;\n  return (b - x) / (b - a);\n}\n\nfunction alto(x, a, b) {\n  if (x <= a) return 0;\n  if (x >= b) return 1;\n  return (x - a) / (b - a);\n}\n\nfunction triangular(x, a, b, c) {\n  if (x <= a || x >= c) return 0;\n  if (x === b) return 1;\n  if (x < b) return (x - a) / (b - a);\n  return (c - x) / (c - b);\n}\n\n// Variable 1: anticipación de la cita\n// Poca anticipación aumenta riesgo.\n// Mucha anticipación reduce riesgo.\nconst anticipacion_baja = bajo(anticipacion_horas, 6, 24);\nconst anticipacion_media = triangular(anticipacion_horas, 12, 48, 96);\nconst anticipacion_alta = alto(anticipacion_horas, 48, 120);\n\n// Variable 2: historial del cliente\n// Este historial viene de Google Sheets.\nconst historial_malo = bajo(historial_cliente, 0.3, 0.6);\nconst historial_regular = triangular(historial_cliente, 0.4, 0.6, 0.8);\nconst historial_bueno = alto(historial_cliente, 0.6, 0.9);\n\n// Variable 3: confirmación del cliente\n// Mide qué tan completa está la solicitud actual.\nconst confirmacion_baja = bajo(confirmacion_cliente, 0.3, 0.6);\nconst confirmacion_media = triangular(confirmacion_cliente, 0.4, 0.6, 0.8);\nconst confirmacion_alta = alto(confirmacion_cliente, 0.6, 0.9);\n\n// Variable 4: hora de la cita\n// Desde las 4 p.m. empieza a considerarse más demandada.\n// Desde las 7 p.m. se considera totalmente alta demanda.\nconst hora_alta_demanda = alto(hora_cita, 16, 19);\n\n// Variable 5: duración\n// Una cita larga bloquea más tiempo, por eso puede aumentar el riesgo operativo.\nconst duracion_larga = alto(duracion, 45, 90);\n\n// Reglas difusas\n\n// Riesgo alto\nconst regla_riesgo_alto_1 = Math.min(anticipacion_baja, historial_malo);\nconst regla_riesgo_alto_2 = Math.min(confirmacion_baja, duracion_larga);\nconst regla_riesgo_alto_3 = Math.min(hora_alta_demanda, confirmacion_baja);\nconst regla_riesgo_alto_4 = Math.min(historial_malo, duracion_larga);\n\n// Riesgo medio\nconst regla_riesgo_medio_1 = Math.min(anticipacion_media, historial_regular);\nconst regla_riesgo_medio_2 = Math.min(confirmacion_media, duracion_larga);\nconst regla_riesgo_medio_3 = Math.min(hora_alta_demanda, historial_regular);\n\n// Riesgo bajo\nconst regla_riesgo_bajo_1 = Math.min(anticipacion_alta, historial_bueno);\nconst regla_riesgo_bajo_2 = Math.min(confirmacion_alta, historial_bueno);\nconst regla_riesgo_bajo_3 = Math.min(anticipacion_alta, confirmacion_alta);\n\n// Agregación de reglas\nconst riesgo_bajo = Math.max(\n  regla_riesgo_bajo_1,\n  regla_riesgo_bajo_2,\n  regla_riesgo_bajo_3\n);\n\nconst riesgo_medio = Math.max(\n  regla_riesgo_medio_1,\n  regla_riesgo_medio_2,\n  regla_riesgo_medio_3\n);\n\nconst riesgo_alto = Math.max(\n  regla_riesgo_alto_1,\n  regla_riesgo_alto_2,\n  regla_riesgo_alto_3,\n  regla_riesgo_alto_4\n);\n\n// Defuzzificación simple por promedio ponderado\n// Bajo = 0.2\n// Medio = 0.5\n// Alto = 0.85\nconst numerador =\n  riesgo_bajo * 0.2 +\n  riesgo_medio * 0.5 +\n  riesgo_alto * 0.85;\n\nconst denominador =\n  riesgo_bajo +\n  riesgo_medio +\n  riesgo_alto;\n\nlet riesgo_num = denominador === 0 ? 0.3 : numerador / denominador;\nriesgo_num = Number(riesgo_num.toFixed(2));\n\n// Acción racional según el riesgo\nlet riesgo_categoria;\nlet accion_racional;\n\nif (riesgo_num < 0.35) {\n  riesgo_categoria = 'bajo';\n  accion_racional = 'crear cita normalmente';\n} else if (riesgo_num < 0.65) {\n  riesgo_categoria = 'medio';\n  accion_racional = 'crear cita y enviar recordatorio';\n} else {\n  riesgo_categoria = 'alto';\n  accion_racional = 'pedir doble confirmacion o alertar administrador';\n}\n\nreturn [\n  {\n    json: {\n      ...item,\n\n      anticipacion_horas,\n      historial_cliente,\n      historial_confianza,\n      confirmacion_cliente,\n      hora_cita,\n      duracion,\n\n      anticipacion_baja: Number(anticipacion_baja.toFixed(2)),\n      anticipacion_media: Number(anticipacion_media.toFixed(2)),\n      anticipacion_alta: Number(anticipacion_alta.toFixed(2)),\n\n      historial_malo: Number(historial_malo.toFixed(2)),\n      historial_regular: Number(historial_regular.toFixed(2)),\n      historial_bueno: Number(historial_bueno.toFixed(2)),\n\n      confirmacion_baja: Number(confirmacion_baja.toFixed(2)),\n      confirmacion_media: Number(confirmacion_media.toFixed(2)),\n      confirmacion_alta: Number(confirmacion_alta.toFixed(2)),\n\n      hora_alta_demanda: Number(hora_alta_demanda.toFixed(2)),\n      duracion_larga: Number(duracion_larga.toFixed(2)),\n\n      riesgo_bajo: Number(riesgo_bajo.toFixed(2)),\n      riesgo_medio: Number(riesgo_medio.toFixed(2)),\n      riesgo_alto: Number(riesgo_alto.toFixed(2)),\n\n      riesgo_num,\n      riesgo_categoria,\n      accion_racional\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        -320
+      ],
+      "id": "ec9c5ad7-0e39-4fbd-8b1e-6351f70c5f59",
+      "name": "Calcular riesgo difuso"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Normalizar IA": {
+      "main": [
+        [
+          {
+            "node": "Registrar solicitud recibida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recibir Mensajes": {
+      "main": [
+        [
+          {
+            "node": "Renombrar Campos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Renombrar Campos": {
+      "main": [
+        [
+          {
+            "node": "Usar un LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usar un LLM": {
+      "main": [
+        [
+          {
+            "node": "Normalizar IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Usar un LLM",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Categorizar": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene fecha y hora?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar log precios y duración",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar log horarios barberia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar cita para cancelar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Tiene nuevo horario?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar log desconocido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No entender la solicitud": {
+      "main": [
+        []
+      ]
+    },
+    "Horarios Barberia": {
+      "main": [
+        []
+      ]
+    },
+    "Elegir la cita encontrada": {
+      "main": [
+        [
+          {
+            "node": "¿Encontró cita?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Encontró cita?": {
+      "main": [
+        [
+          {
+            "node": "Calcular nuevo horario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar log cambio cita no encontrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar evento": {
+      "main": [
+        [
+          {
+            "node": "Preparar log cambio confirmado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular nuevo horario": {
+      "main": [
+        [
+          {
+            "node": "Consultar disponibilidad nueva hora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar disponibilidad nueva hora": {
+      "main": [
+        [
+          {
+            "node": "Si existe disponibildad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Si existe disponibildad": {
+      "main": [
+        [
+          {
+            "node": "Actualizar evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar log horario no libre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar disponibilidad": {
+      "main": [
+        [
+          {
+            "node": "¿Existe disponibilidad?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear la cita": {
+      "main": [
+        [
+          {
+            "node": "Preparar log cita creada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solicitar fecha y hora": {
+      "main": [
+        []
+      ]
+    },
+    "Mensaje de no disponibilidad": {
+      "main": [
+        []
+      ]
+    },
+    "Elegir cita para cancelar": {
+      "main": [
+        [
+          {
+            "node": "¿Encontró cita a cancelar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene fecha y hora?": {
+      "main": [
+        [
+          {
+            "node": "Verificar disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar log datos incompletos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar solicitud recibida": {
+      "main": [
+        [
+          {
+            "node": "Categorizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log cita creada": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final": {
+      "main": [
+        [
+          {
+            "node": "Mensaje confirmar creación de la cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log horario ocupado": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final no disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final no disponibilidad": {
+      "main": [
+        [
+          {
+            "node": "Mensaje de no disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log datos incompletos": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final datos incompletos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final datos incompletos": {
+      "main": [
+        [
+          {
+            "node": "Solicitar fecha y hora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar cita para cancelar": {
+      "main": [
+        [
+          {
+            "node": "Elegir cita para cancelar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Encontró cita a cancelar?": {
+      "main": [
+        [
+          {
+            "node": "Cancelar cita",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar log cancelación sin cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancelar cita": {
+      "main": [
+        [
+          {
+            "node": "Preparar log cancelación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar cita para cambiar horario": {
+      "main": [
+        [
+          {
+            "node": "Elegir la cita encontrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Existe disponibilidad?": {
+      "main": [
+        [
+          {
+            "node": "Obtener historial del chat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar log horario ocupado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log cambio confirmado": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final cambio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final cambio": {
+      "main": [
+        [
+          {
+            "node": "Confirmar cambio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final cambio ocupado": {
+      "main": [
+        [
+          {
+            "node": "Responder no disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log cancelación": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final cancelación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final cancelación": {
+      "main": [
+        [
+          {
+            "node": "Mensaje cancelar evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log cancelación sin cita": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final cancelación sin cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final cancelación sin cita": {
+      "main": [
+        [
+          {
+            "node": "Mensaje no encontrar cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene nuevo horario?": {
+      "main": [
+        [
+          {
+            "node": "Buscar cita para cambiar horario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar log cambio sin nuevo horario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log precios y duración": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final precios y duracion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log horarios barberia": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final horarios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final horarios": {
+      "main": [
+        [
+          {
+            "node": "Horarios Barberia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final precios y duracion": {
+      "main": [
+        [
+          {
+            "node": "Precios, servicios y duración aproximada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Precios, servicios y duración aproximada": {
+      "main": [
+        []
+      ]
+    },
+    "Preparar log desconocido": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final desconocido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final desconocido": {
+      "main": [
+        [
+          {
+            "node": "No entender la solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log horario no libre": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final cambio ocupado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log cambio sin nuevo horario": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final cambio sin horario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final cambio sin horario": {
+      "main": [
+        [
+          {
+            "node": "Responder para obtener detalles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log cambio cita no encontrada": {
+      "main": [
+        [
+          {
+            "node": "Registrar resultado final cambio cita no encontrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar resultado final cambio cita no encontrada": {
+      "main": [
+        [
+          {
+            "node": "Mensaje cambio cita no encontrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener historial del chat": {
+      "main": [
+        [
+          {
+            "node": "Calcular historial cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular historial cliente": {
+      "main": [
+        [
+          {
+            "node": "Calcular riesgo difuso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular riesgo difuso": {
+      "main": [
+        [
+          {
+            "node": "Crear la cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "WORKFLOW_VERSION_ID_HERE",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "N8N_INSTANCE_ID_HERE"
+  },
+  "id": "WORKFLOW_ID_HERE",
+  "tags": []
+}
